@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Sensore – My Pressure Heatmap</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg: #f3f4f6;
+            --card: #ffffff;
+            --accent: #2563eb;
+            --accent-soft: rgba(37, 99, 235, 0.09);
+            --text: #111827;
+            --muted: #6b7280;
+            --border-soft: #e5e7eb;
+        }
+
+        body {
+            margin: 0;
+            padding: 24px 32px 32px;
+            min-height: 100vh;
+            background: radial-gradient(circle at top, #e5e7eb 0, #d1d5db 40%, #e5e7eb 100%);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: var(--text);
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .shell {
+            background: #e5e7eb;
+            border-radius: 28px;
+            padding: 18px;
+            border: 1px solid rgba(148,163,184,0.35);
+            box-shadow: 0 22px 60px rgba(148,163,184,0.6);
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1.6fr 1fr;
+            gap: 18px;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 24px;
+            padding: 18px 20px;
+            border: 1px solid var(--border-soft);
+            box-shadow: 0 14px 40px rgba(148,163,184,0.55);
+        }
+
+        .heatmap-wrapper {
+            border-radius: 22px;
+            overflow: hidden;
+            border: 1px solid var(--border-soft);
+            background: black;
+        }
+
+        #heatmap {
+            width: 100%;
+            max-width: 100%;
+            aspect-ratio: 1.2;
+            display: block;
+        }
+
+        .legend-shell {
+            margin-top: 12px;
+            width: 100%;
+        }
+
+        .legend-bar {
+            height: 10px;
+            border-radius: 999px;
+            background: linear-gradient(to right,
+            #60a5fa,
+            #22c55e,
+            #facc15,
+            #f97316,
+            #ef4444
+            );
+        }
+
+        .legend-labels {
+            margin-top: 5px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .right-panel {
+            display: grid;
+            grid-template-rows: auto auto;
+            gap: 14px;
+        }
+
+        .metrics-panel {
+            padding: 12px;
+            background: #f3f4f6;
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            display: grid;
+            grid-template-columns: repeat(3,1fr);
+            gap: 10px;
+        }
+
+        .metric {
+            background: white;
+            border: 1px solid var(--border-soft);
+            border-radius: 14px;
+            padding: 10px;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .metric-value {
+            margin-top: 4px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .metric-risk-low { color: #22c55e; }
+        .metric-risk-med { color: #f97316; }
+        .metric-risk-high { color: #ef4444; }
+
+        .timeline-card {
+            padding: 12px 14px 16px;
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            background: white;
+        }
+
+        #timelineChart {
+            width: 100%;
+            height: 200px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 1024px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="shell">
+    <h1>My Pressure Heatmap</h1>
+
+    <div class="layout">
+        <!-- LEFT PANEL -->
+        <div class="card">
+            <div class="heatmap-wrapper">
+                <canvas id="heatmap" width="640" height="480"></canvas>
+            </div>
+
+            <div class="legend-shell">
+                <div class="legend-bar"></div>
+                <div class="legend-labels">
+                    <span>Low</span>
+                    <span>Normal</span>
+                    <span>High</span>
+                    <span>Critical</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="right-panel">
+            <div class="metrics-panel">
+                <div class="metric">
+                    <div class="metric-label">Risk Score</div>
+                    <div class="metric-value" id="m-risk">–</div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">Contact Area</div>
+                    <div class="metric-value" id="m-area">–</div>
+                </div>
+
+                <div class="metric">
+                    <div class="metric-label">Peak Pressure</div>
+                    <div class="metric-value" id="m-peak">–</div>
+                </div>
+            </div>
+
+            <div class="timeline-card">
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);">
+                    <span>Peak Pressure (mmHg)</span>
+                    <span id="tl-count"></span>
+                </div>
+                <div id="timelineWrapper" style="height: 690px; margin-top: 0; margin-bottom: 0;">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const apiBase = 'http://localhost:5076';
+
+    function colorForValue(v) {
+        const t = Math.min(1, Math.max(0, v / 255));
+        const r = Math.floor(255 * t);
+        const g = Math.floor(255 * (1 - t) * 0.4);
+        const b = Math.floor(255 * (1 - t));
+        return `rgb(${r},${g},${b})`;
+    }
+
+    function drawHeatmap(matrix) {
+        const canvas = document.getElementById('heatmap');
+        const ctx = canvas.getContext('2d');
+        const size = 32;
+        const cw = canvas.width / size;
+        const ch = canvas.height / size;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                ctx.fillStyle = colorForValue(matrix[y][x]);
+                ctx.fillRect(x * cw, y * ch, cw, ch);
+            }
+        }
+    }
+
+    function setRiskClass(v) {
+        const el = document.getElementById('m-risk');
+        el.classList.remove('metric-risk-low','metric-risk-med','metric-risk-high');
+        if (v < 3) {
+            el.classList.add('metric-risk-low');
+        } else if (v < 7) {
+            el.classList.add('metric-risk-med');
+        } else {
+            el.classList.add('metric-risk-high');
+        }
+    }
+
+    async function loadFrame(frameOverride) {
+        const frame = frameOverride ?? 0;
+
+        try {
+            const res = await fetch(`${apiBase}/api/import/user/frame/${frame}`, {
+                method: "POST",
+                credentials: "include"
+            });
+
+            if (!res.ok) return;
+
+            const data = await res.json();
+            const matrix = data.matrix || data.Matrix;
+
+            drawHeatmap(matrix);
+
+            const peak = data.PeakPressure ?? data.peakPressure;
+            const area = data.ContactArea ?? data.contactArea;
+            const risk = data.RiskScore ?? data.riskScore;
+
+            document.getElementById('m-peak').textContent = peak;
+            document.getElementById('m-area').textContent = `${area.toFixed(2)}%`;
+            document.getElementById('m-risk').textContent = risk.toFixed(2);
+            setRiskClass(risk);
+        } catch (e) {
+            console.error("Frame load error:", e);
+        }
+    }
+
+    let timelineChart;
+
+    async function loadTimeline() {
+        try {
+            const res = await fetch(`${apiBase}/api/import/user/timeline`, {
+                method: "POST",
+                credentials: "include"
+            });
+
+            if (!res.ok) return;
+
+            const data = await res.json();
+
+            const labels = data.map(p => p.FrameIndex ?? p.frameIndex);
+            const peaks = data.map(p => p.PeakPressure ?? p.peakPressure);
+
+            document.getElementById('tl-count').textContent = `${data.length} frames`;
+
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+
+            if (timelineChart) {
+                timelineChart.destroy();
+            }
+
+            timelineChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: "Peak Pressure",
+                        data: peaks,
+                        borderColor: "#2563eb",
+                        backgroundColor: "rgba(37, 99, 235, 0.12)",
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: "#2563eb",
+                        pointHoverBorderColor: "#ffffff",
+                        pointHoverBorderWidth: 2,
+                        hitRadius: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            enabled: true,
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            padding: 10,
+                            cornerRadius: 8,
+                            displayColors: false,
+                            callbacks: {
+                                title: (items) => `Frame ${items[0].label}`,
+                                label: (item) => `Pressure: ${item.parsed.y} mmHg`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { display: false },
+                            grid: { display: false }
+                        },
+                        y: {
+                            ticks: { color: '#6b7280' },
+                            grid: { color: "#e5e7eb" }
+                        }
+                    },
+                    onClick: (evt, elements) => {
+                        if (!elements || !elements.length) return;
+                        const idx = elements[0].index;
+                        const frameIndex = labels[idx];
+                        loadFrame(frameIndex);
+                    }
+                }
+            });
+
+        } catch (e) {
+            console.log("Timeline error:", e);
+        }
+    }
+
+    loadFrame();
+    loadTimeline();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# CSV files
+*.csv
+**/*.csv
+
+# OS files
+.DS_Store

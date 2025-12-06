@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Sensore – Peak Pressure Timeline</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 20px;
+        }
+        #chart-container {
+            width: 100%;
+            max-width: 1000px;
+            height: 450px;
+        }
+    </style>
+</head>
+<body>
+<h1>Peak Pressure Timeline</h1>
+<div id="status">Loading…</div>
+<div id="chart-container">
+    <canvas id="chart"></canvas>
+</div>
+
+<script>
+    async function loadTimeline() {
+        const statusEl = document.getElementById('status');
+
+        try {
+            const response = await fetch('http://localhost:5076/api/import/timeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    path: "/Users/darshannarkhede/RiderProjects/Sensore/Sensore/GTLB-Data/1c0fd777_20251011.csv"
+                })
+            });
+
+            if (!response.ok) {
+                statusEl.textContent = "API error: " + response.status + " " + response.statusText;
+                return;
+            }
+
+            const data = await response.json();
+            if (!Array.isArray(data) || data.length === 0) {
+                statusEl.textContent = "No data returned.";
+                return;
+            }
+
+            statusEl.textContent = "Frames loaded: " + data.length;
+
+            const labels = data.map(p => p.frameIndex);
+            const peak = data.map(p => p.peakPressure);
+
+            const ctx = document.getElementById('chart').getContext('2d');
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Peak Pressure (per frame)',
+                        data: peak,
+                        borderColor: '#1d4ed8',
+                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Frame Index' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Peak Pressure' },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+        } catch (err) {
+            console.error(err);
+            statusEl.textContent = "JavaScript error: " + err.message;
+        }
+    }
+
+    loadTimeline();
+</script>
+</body>
+</html>
